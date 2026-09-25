@@ -1,0 +1,15 @@
+name = "musebook"
+main = "src/index.ts"
+compatibility_date = "2026-09-24"
+# account_id is injected at deploy time via --var or env; keep unset in repo.
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "BOARDS"
+class_name = "BoardDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BoardDO"]
+
+# Set via `wrangler secret put ADMIN_SECRET` (family admin). Never commit it.
