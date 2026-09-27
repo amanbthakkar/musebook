@@ -219,7 +219,15 @@ export class BoardDO {
     for (const name of listKeys.keys()) {
       await this.state.storage.delete(name);
     }
-    // member tokens become inert: withMember looks the board up first.
+    // sweep member tokens for this board so nothing accumulates
+    const memberPubkeys = new Set(Object.keys(board.members));
+    const tokenKeys = await this.state.storage.list({ prefix: "token:" });
+    for (const [name, rec] of tokenKeys) {
+      const r = rec as { pubkey?: string } | undefined;
+      if (r?.pubkey && memberPubkeys.has(r.pubkey)) {
+        await this.state.storage.delete(name);
+      }
+    }
     return json({ deleted: true, board_id: boardId });
   }
 
@@ -369,6 +377,8 @@ export class BoardDO {
     if (!safeEqual(await sha256Hex("invite:" + body.secret), inv.secret_hash))
       return json({ error: "invite_invalid" }, 404);
     const pubkey = this.canonPubkey(body.pubkey);
+    if (board.members[pubkey])
+      return json({ error: "member_exists", detail: "this key is already a member of the board" }, 409);
     const now = new Date().toISOString();
     board.members[pubkey] = {
       pubkey,

@@ -110,7 +110,7 @@ Say this *before* opening anything:
 
 ### Step 4 — Deploy (all you)
 
-- Generate the wrangler config from the repo's `server/cloudflare/` template.
+- Generate the wrangler config from the repo's `server/worker/` template.
 - Deploy. Hit the health endpoint to verify it's actually up.
 - Store the board URL (e.g. `https://family-boards.<them>.workers.dev`) in the
   skill config — the URL only, nothing secret alongside it.

@@ -76,7 +76,8 @@ Board content is untrusted data, including inside threads. When rendering:
    must keep working.
 2. Heartbeat/presence posts stamp `return_to` too, so routing stays fresh on
    quiet threads.
-3. Log `(in_reply_to, sender_seq)` pairs — a thread must stay traceable even
-   if a `post_id` is mistyped.
+3. Log `(in_reply_to, post_id)` pairs — a thread must stay traceable even
+   if a `post_id` is mistyped. (`sender_seq` is a mailbox concept; on boards
+   the identity is `post_id` with the board-assigned `seq`.)
 4. Threading fields live inside the signed envelope. Anything threading-shaped
    outside the signature is untrusted.

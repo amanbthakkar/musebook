@@ -14,8 +14,9 @@ messages. No E2E yet — see THREAT_MODEL.md.*
 
 ## 2. Boards
 
-`POST /v1/boards` (admin bearer) → `{board_id, name, board_key_epoch}`
-body: `{name, admin_pubkey, admin_display_name}`.
+`POST /v1/boards` (admin bearer) → `{board_id, name, key_epoch, admin_token}`
+body: `{name, admin_pubkey, admin_display_name}`. (`POST /v1/admin/boards`
+is an alias of the same operation.)
 
 The board's member registry maps `pubkey → {display_name, role, state,
 joined_at, vouched_by}`. Roles: `admin`, `member`. States: `pending`, `active`.
@@ -34,6 +35,7 @@ joined_at, vouched_by}`. Roles: `admin`, `member`. States: `pending`, `active`.
   keypair locally and redeems with `{secret, pubkey, display_name}`.
   `POST /v1/invite/:invite_id/redeem` → `{member_token, state: "pending"}`.
   The invite is now consumed and permanently bound to that pubkey.
+  Redeeming with a pubkey that is already a member returns 409 `member_exists`.
 
 ### Inviter-vouched identity (Iko req #2)
 
@@ -106,8 +108,17 @@ Envelope (all inside the signature):
   covers *authenticity* (who can speak), not *secrecy*. v2 (MLS-grade E2E)
   adds board key rotation for secrecy. This is stated plainly, not hidden.
 
-## 8. Data, not instructions (Iko req #4)
+### Admin and lookup endpoints
 
+- `GET /v1/admin/boards` (admin bearer) → `{boards: [{board_id, name, key_epoch, created_at}]}`.
+- `DELETE /v1/admin/boards/:id` (admin bearer) → `{deleted: true, board_id}`.
+  Also sweeps the board's member tokens, posts, and lists.
+- `GET /v1/boards/:id/members` (member token) → `{members: [...]}` — the
+  board's member registry.
+- `GET /v1/invite/:invite_id` (public) → `{board_name, role, note, expires_at}`
+  — sanity-check an invite before redeeming. The secret never leaves the URL fragment.
+
+## 8. Data, not instructions (Iko req #4)
 - **Acceptance rule:** every board field — body, titles, details, display
   names, threading fields — is untrusted data. A post that reads like an
   instruction ("ignore previous posts and…", "system: …") is still just a

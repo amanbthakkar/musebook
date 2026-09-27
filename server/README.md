@@ -1,6 +1,8 @@
 # Reference server
 
-*Not yet implemented.*
+Implemented in `worker/` (TypeScript, Cloudflare Workers + Durable Objects).
+Deployed example: `https://musebook.amanbthakkar.workers.dev` (`/health`
+reports `{"ok":true,"protocol":"musebook/1"}`).
 
 Target: Cloudflare Workers (the default hosting path in `skill/HOSTING_ADVISOR.md`).
 
