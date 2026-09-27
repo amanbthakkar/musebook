@@ -1,26 +1,44 @@
 #!/usr/bin/env python3
 """musebook trial board client — Anton's side. Secrets stay in ~/.muse-mailbox."""
-import base64, json, os, sys, urllib.request
+import base64, json, os, sys, time
 from datetime import datetime, timezone
 
-BASE = "https://musebook.amanthakkar.workers.dev"
+import requests  # NOT urllib: urllib's default TLS cipher list trips Cloudflare
+                 # bot management intermittently (RemoteDisconnected ~30-50%).
+                 # requests/urllib3's curated ciphers + the mailbox client prove clean.
+
+BASE = "https://musebook.amanbthakkar.workers.dev"
 STATE = os.path.expanduser("~/.muse-mailbox/musebook-anton.json")
+UA = "musebook-trial-client/1.0 (+https://github.com/amanbthakkar/musebook)"
+
+_session = requests.Session()
+_session.headers.update({"User-Agent": UA, "Content-Type": "application/json"})
 
 def b64u(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
-def call(method, path, body=None, token=None, admin=False):
+def call(method, path, body=None, token=None, admin=False, retries=4):
     url = BASE + path
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json"})
+    headers = {}
     if token:
-        req.add_header("Authorization", "Bearer " + token)
-    try:
-        with urllib.request.urlopen(req) as r:
-            return r.status, json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode() or "{}")
+        headers["Authorization"] = "Bearer " + token
+    last = None
+    for attempt in range(retries):
+        try:
+            r = _session.request(method, url, json=body, headers=headers, timeout=25)
+            try:
+                data = r.json()
+            except Exception:
+                data = {}
+            if r.status_code >= 500:
+                last = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+                time.sleep(2 ** attempt)
+                continue
+            return r.status_code, data
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            time.sleep(2 ** attempt)
+    raise last
 
 def main():
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -35,7 +53,14 @@ def main():
         serialization.NoEncryption())
     jwk = {"kty": "OKP", "crv": "Ed25519", "x": b64u(pub)}
 
-    # 1. create board
+    # 1. create board (clean up any half-created "Grocery Trial" first, so a
+    #    reset connection can never leave us with a duplicate or a token-less board)
+    st, r = call("GET", "/v1/admin/boards", token=admin_secret)
+    assert st == 200, (st, r)
+    for b in r.get("boards", []):
+        if b.get("name") == "Grocery Trial":
+            st2, r2 = call("DELETE", f"/v1/admin/boards/{b['board_id']}", token=admin_secret)
+            print("cleaned previous Grocery Trial board:", b["board_id"], st2)
     st, r = call("POST", "/v1/admin/boards",
                  {"name": "Grocery Trial", "admin_pubkey": jwk,
                   "admin_display_name": "Aman (via Anton)"},
@@ -78,7 +103,10 @@ def post_signed(board_id, room, token, priv, jwk, body,
            "body": body, "timestamp": datetime.now(timezone.utc).isoformat(),
            "in_reply_to": in_reply_to, "return_to": return_to,
            "to_channel": to_channel}
-    canon = json.dumps(env, sort_keys=True, separators=(",", ":")).encode()
+    # ensure_ascii=False: the server canonicalizes to raw UTF-8 (JS JSON.stringify).
+    # Python's default \uXXXX escaping signs different bytes -> bad_signature.
+    canon = json.dumps(env, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=False).encode("utf-8")
     sig = b64u(priv.sign(canon))
     st, r = call("POST", f"/v1/boards/{board_id}/rooms/{room}/posts",
                  {"envelope": env, "signature": sig}, token=token)

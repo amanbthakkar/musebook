@@ -68,45 +68,49 @@ export class BoardDO {
       // --- board admin ops (bearer: admin token) ---
       if (method === "POST" && parts.length === 2 && parts[0] === "admin" && parts[1] === "boards")
         return this.createBoard(await request.json());
-      if (method === "POST" && parts.length === 4 && parts[0] === "boards" && parts[2] === "invites")
+      if (method === "POST" && parts.length === 3 && parts[0] === "boards" && parts[2] === "invites")
         return this.withMember(request, parts[1], "admin", async (m) =>
           this.mintInvite(parts[1], m, await request.json()));
-      if (method === "DELETE" && parts.length === 5 && parts[0] === "boards" && parts[2] === "invites")
+      if (method === "DELETE" && parts.length === 4 && parts[0] === "boards" && parts[2] === "invites")
         return this.withMember(request, parts[1], "admin", () =>
           this.revokeInvite(parts[1], parts[3]));
-      if (method === "POST" && parts.length === 4 && parts[0] === "boards" && parts[2] === "rooms")
+      if (method === "POST" && parts.length === 3 && parts[0] === "boards" && parts[2] === "rooms")
         return this.withMember(request, parts[1], "admin", async () =>
           this.createRoom(parts[1], await request.json()));
-      if (method === "POST" && parts.length === 6 && parts[0] === "boards" && parts[2] === "members" && parts[4] === "vouch")
+      if (method === "POST" && parts.length === 5 && parts[0] === "boards" && parts[2] === "members" && parts[4] === "vouch")
         return this.withMember(request, parts[1], "admin", (m) =>
           this.vouch(parts[1], parts[3], m));
-      if (method === "POST" && parts.length === 6 && parts[0] === "boards" && parts[2] === "members" && parts[4] === "revoke")
+      if (method === "POST" && parts.length === 5 && parts[0] === "boards" && parts[2] === "members" && parts[4] === "revoke")
         return this.withMember(request, parts[1], "admin", () =>
           this.revokeMember(parts[1], parts[3]));
-      if (method === "GET" && parts.length === 4 && parts[0] === "boards" && parts[2] === "members")
+      if (method === "GET" && parts.length === 3 && parts[0] === "boards" && parts[2] === "members")
         return this.withMember(request, parts[1], "member", () =>
           this.listMembers(parts[1]));
-      if (method === "GET" && parts.length === 4 && parts[0] === "boards" && parts[2] === "export")
+      if (method === "GET" && parts.length === 3 && parts[0] === "boards" && parts[2] === "export")
         return this.withMember(request, parts[1], "admin", () =>
           this.exportBoard(parts[1]));
+      if (method === "GET" && parts.length === 2 && parts[0] === "admin" && parts[1] === "boards")
+        return this.listBoards();
+      if (method === "DELETE" && parts.length === 3 && parts[0] === "admin" && parts[1] === "boards")
+        return this.deleteBoard(parts[2]);
 
       // --- member ops ---
-      if (method === "POST" && parts.length === 6 && parts[0] === "boards" && parts[2] === "rooms" && parts[4] === "posts")
+      if (method === "POST" && parts.length === 5 && parts[0] === "boards" && parts[2] === "rooms" && parts[4] === "posts")
         return this.withMember(request, parts[1], "member", async (m) =>
           this.post(parts[1], parts[3], m, await request.json()));
-      if (method === "GET" && parts.length === 6 && parts[0] === "boards" && parts[2] === "rooms" && parts[4] === "posts")
+      if (method === "GET" && parts.length === 5 && parts[0] === "boards" && parts[2] === "rooms" && parts[4] === "posts")
         return this.withMember(request, parts[1], "member", () =>
           this.getPosts(parts[1], parts[3], url.searchParams.get("since")));
-      if (method === "PUT" && parts.length === 8 && parts[0] === "boards" && parts[2] === "lists" && parts[4] === "items")
+      if (method === "PUT" && parts.length === 6 && parts[0] === "boards" && parts[2] === "lists" && parts[4] === "items")
         return this.withMember(request, parts[1], "member", async (m) =>
           this.listOp(parts[1], parts[3], parts[5], m, await request.json()));
-      if (method === "GET" && parts.length === 6 && parts[0] === "boards" && parts[2] === "lists" && parts[4] === "items")
+      if (method === "GET" && parts.length === 5 && parts[0] === "boards" && parts[2] === "lists" && parts[4] === "items")
         return this.withMember(request, parts[1], "member", () =>
           this.getItems(parts[1], parts[3]));
 
       // --- invite public / redeem ---
-      if (method === "GET" && parts.length === 3 && parts[0] === "invite")
-        return this.inviteInfo(parts[1], parts[2]);
+      if (method === "GET" && parts.length === 2 && parts[0] === "invite")
+        return this.inviteInfo(parts[1]);
       if (method === "POST" && parts.length === 3 && parts[0] === "invite" && parts[2] === "redeem")
         return this.redeemInvite(parts[1], await request.json());
 
@@ -187,6 +191,36 @@ export class BoardDO {
     const token = randomSecret();
     await this.state.storage.put(`token:${await sha256Hex("token:" + token)}`, { pubkey });
     return json({ board_id: id, name: board.name, key_epoch: 1, admin_token: token });
+  }
+
+  private async listBoards(): Promise<Response> {
+    const boards = await this.state.storage.list<Board>({ prefix: "board:" });
+    return json({
+      boards: [...boards.values()].map((b) => ({
+        board_id: b.id,
+        name: b.name,
+        key_epoch: b.key_epoch,
+        created_at: b.created_at,
+        rooms: b.rooms,
+        member_count: Object.keys(b.members).length,
+        invite_count: Object.keys(b.invites).length,
+      })),
+    });
+  }
+
+  private async deleteBoard(boardId: string): Promise<Response> {
+    const board = await this.getBoard(boardId);
+    if (!board) return json({ error: "board_not_found" }, 404);
+    await this.state.storage.delete(`board:${boardId}`);
+    for (const room of board.rooms) {
+      await this.state.storage.delete(`posts:${boardId}:${room}`);
+    }
+    const listKeys = await this.state.storage.list({ prefix: `list:${boardId}:` });
+    for (const name of listKeys.keys()) {
+      await this.state.storage.delete(name);
+    }
+    // member tokens become inert: withMember looks the board up first.
+    return json({ deleted: true, board_id: boardId });
   }
 
   private async mintInvite(boardId: string, admin: { pubkey: string }, body: {
@@ -295,8 +329,13 @@ export class BoardDO {
 
   // ---------- invites ----------
 
-  private async inviteInfo(boardId: string, inviteId: string): Promise<Response> {
-    const board = await this.getBoard(boardId);
+  private async inviteInfo(inviteId: string): Promise<Response> {
+    // find the board holding this invite
+    const boards = await this.state.storage.list<Board>({ prefix: "board:" });
+    let board: Board | null = null;
+    for (const b of boards.values()) {
+      if (b.invites[inviteId]) { board = b; break; }
+    }
     const inv = board?.invites[inviteId];
     if (!inv || inv.redeemed || new Date(inv.expires_at).getTime() < Date.now())
       return json({ error: "invite_invalid" }, 404);
