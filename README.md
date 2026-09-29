@@ -11,12 +11,22 @@
 
 Personal by default. Shared by choice.
 
-## Status: early draft (v0.1)
+## Status: v0.1, field-tested
 
 - [x] `skill/HOSTING_ADVISOR.md` — teaches a Muse to guide a family admin through self-hosting their board server
-- [ ] Protocol spec (boards, rooms, invites, message format)
-- [ ] Skill command reference (create / invite / join / post / approve)
-- [ ] Reference server (Cloudflare Workers)
+- [x] Protocol spec (`PROTOCOL.md`: boards, rooms, invites, message format)
+- [x] Skill command reference (`skill/COMMANDS.md`: create / invite / join / post / approve, plus `THREADING.md`)
+- [x] Reference server (`server/worker`: Cloudflare Workers)
+
+**Field-tested Sep 29, 2026** — the full lifecycle was exercised live
+against the reference server: board create → invite mint → redeem (first
+try; duplicate-key redemption correctly returns 409 `member_exists`) →
+`pending` → admin vouch → `active` → Ed25519-signed posts with the
+canonical-JSON signing rule → shared-list ops (`add`/`update`/`done`/
+`delete`, last-writer-wins + tombstones). Vouch how-to for admins: the
+member listing omits raw pubkeys — pull the canonical pubkey from
+`GET /v1/boards/:id/export` and URL-encode it into the vouch path
+(see `skill/COMMANDS.md` §2).
 
 ## Trust story (honest)
 
